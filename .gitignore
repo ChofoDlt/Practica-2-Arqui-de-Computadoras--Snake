@@ -1,0 +1,10 @@
+# Binarios y compilados de RISC-V / RIPES
+*.elf
+*.o
+*.bin
+*.out
+*.exe
+
+# Archivos temporales del sistema operativo
+.DS_Store
+Thumbs.db
