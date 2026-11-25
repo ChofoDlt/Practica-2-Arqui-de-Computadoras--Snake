@@ -1,9 +1,20 @@
 #include "ripes_io.h"
 
 // Cuadrícula lógica (cada celda = 2x2 LEDs físicos = 4 LEDs)
-#define GRID_W (MATRIX_WIDTH / 2)
-#define GRID_H (MATRIX_HEIGHT / 2)
-#define MAX_LEN (GRID_W * GRID_H)
+#define GRID_W      (LED_MATRIX_0_WIDTH / 2)
+#define GRID_H      (LED_MATRIX_0_HEIGHT / 2)
+#define MAX_LEN     (GRID_W * GRID_H)
+
+#define COLOR_BLACK 0x00000000
+#define COLOR_GREEN 0x0000FF00
+#define COLOR_RED   0x00FF0000
+
+volatile unsigned int *SWITCHES_BASE = (volatile unsigned int *)SWITCHES_0_BASE;
+volatile unsigned int *MATRIX        = (volatile unsigned int *)LED_MATRIX_0_BASE;
+volatile unsigned int *DPAD_LEFT     = (volatile unsigned int *)D_PAD_0_LEFT;
+volatile unsigned int *DPAD_RIGHT    = (volatile unsigned int *)D_PAD_0_RIGHT;
+volatile unsigned int *DPAD_DOWN     = (volatile unsigned int *)D_PAD_0_DOWN;
+volatile unsigned int *DPAD_UP       = (volatile unsigned int *)D_PAD_0_UP;
 
 typedef struct {
     int x;
@@ -11,28 +22,26 @@ typedef struct {
 } Point;
 
 // Generador pseudoaleatorio LCG ligero (sin stdlib)
-static uint32_t rand_seed = 12345;
-uint32_t next_rand(void) {
+static unsigned int rand_seed = 12345;
+unsigned int next_rand(void) {
     rand_seed = rand_seed * 1664525 + 1013904223;
     return (rand_seed >> 16);
 }
 
 // Dibuja un bloque de 2x2 LEDs (4 LEDs) en coordenadas lógicas
-void draw_block(int gx, int gy, uint32_t color) {
-    volatile uint32_t *fb = (volatile uint32_t *)LED_MATRIX_0_BASE;
+void draw_block(int gx, int gy, unsigned int color) {
     int px = gx * 2;
     int py = gy * 2;
 
-    fb[py * MATRIX_WIDTH + px]             = color;
-    fb[py * MATRIX_WIDTH + (px + 1)]       = color;
-    fb[(py + 1) * MATRIX_WIDTH + px]       = color;
-    fb[(py + 1) * MATRIX_WIDTH + (px + 1)] = color;
+    MATRIX[py * LED_MATRIX_0_WIDTH + px]             = color;
+    MATRIX[py * LED_MATRIX_0_WIDTH + (px + 1)]       = color;
+    MATRIX[(py + 1) * LED_MATRIX_0_WIDTH + px]       = color;
+    MATRIX[(py + 1) * LED_MATRIX_0_WIDTH + (px + 1)] = color;
 }
 
 void clear_screen(void) {
-    volatile uint32_t *fb = (volatile uint32_t *)LED_MATRIX_0_BASE;
-    for (int i = 0; i < MATRIX_WIDTH * MATRIX_HEIGHT; i++) {
-        fb[i] = COLOR_BLACK;
+    for (int i = 0; i < LED_MATRIX_0_WIDTH * LED_MATRIX_0_HEIGHT; i++) {
+        MATRIX[i] = COLOR_BLACK;
     }
 }
 
@@ -56,6 +65,13 @@ void delay(volatile int cycles) {
     while (cycles-- > 0);
 }
 
+// Punto de entrada limpio para compilación sin stdlib (-nostdlib)
+__attribute__((naked, section(".text.init"))) void _start(void) {
+    asm volatile("li sp, 0x7ffffff0\n\t"
+                 "call main\n\t"
+                 "1: j 1b\n\t");
+}
+
 int main(void) {
     Point snake[MAX_LEN];
     Point apple;
@@ -77,10 +93,10 @@ int main(void) {
         // 2. Bucle principal del juego
         while (!game_over) {
             // Lectura del D-Pad 0
-            if (DPAD_UP && dir_y == 0)    { dir_x = 0;  dir_y = -1; }
-            if (DPAD_DOWN && dir_y == 0)  { dir_x = 0;  dir_y = 1;  }
-            if (DPAD_LEFT && dir_x == 0)  { dir_x = -1; dir_y = 0;  }
-            if (DPAD_RIGHT && dir_x == 0) { dir_x = 1;  dir_y = 0;  }
+            if (*DPAD_UP && dir_y == 0)    { dir_x = 0;  dir_y = -1; }
+            if (*DPAD_DOWN && dir_y == 0)  { dir_x = 0;  dir_y = 1;  }
+            if (*DPAD_LEFT && dir_x == 0)  { dir_x = -1; dir_y = 0;  }
+            if (*DPAD_RIGHT && dir_x == 0) { dir_x = 1;  dir_y = 0;  }
 
             // Nueva posición de la cabeza
             Point next_head = { snake[0].x + dir_x, snake[0].y + dir_y };
@@ -124,13 +140,13 @@ int main(void) {
                 spawn_apple(&apple, snake, len);
             }
 
-            delay(1500);
+            delay(15000);
         }
 
         // 3. Game Over: esperar cambio de estado en Switch 0 para reiniciar
-        uint32_t initial_sw0 = SWITCHES & 0x1;
-        while ((SWITCHES & 0x1) == initial_sw0) {
-            // Espera activa
+        unsigned int initial_sw0 = *SWITCHES_BASE & 0x1;
+        while ((*SWITCHES_BASE & 0x1) == initial_sw0) {
+            // Espera activa hasta que el usuario conmute el Switch 0
         }
     }
 
